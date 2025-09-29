@@ -1,0 +1,145 @@
+
+#===============================================
+# RNA-seq Differential Expression Analysis - EdgeR
+# F. nucleatum effects on colorectal cancer cell lines
+# Author: Áine Finnegan
+# Analysis: EdgeR comparison of HT-29 and MDST8 cells
+#===============================================
+
+# Load required libraries
+library(DESeq2)
+library(edgeR)
+library(tidyverse)
+library(matrixStats)
+library(ggplot2)
+library(ggrepel)
+
+# Loading data
+load("deseq2.dds.RData")
+
+# Extracting raw counts from object
+counts <- assay(dds, "counts")
+colnames(counts) <- gsub("_S[0-9]+$", "", colnames(counts))
+
+# Extracting metadata dataframe from the deseq object
+metadata <- colData(dds)
+metadata$sample <- gsub("_S[0-9]+$", "", metadata$sample)
+
+# Setting up metadata properly
+rownames(metadata) <- metadata$sample
+counts <- counts[, rownames(metadata)]
+
+# Renaming columns for clarity in analysis
+metadata$cell_line <- metadata$Group1
+metadata$treatment <- metadata$Group2
+metadata$replicate <- metadata$Group3
+
+# Setting factor levels with appropriate references
+metadata$cell_line <- factor(metadata$cell_line, levels = c("HT", "MD"))
+metadata$treatment <- factor(metadata$treatment, levels = c("CTRL", "FNN"))
+metadata$replicate <- factor(metadata$replicate)
+
+# Reading in annotation file
+tx2gene <- read.table("tx2gene.tsv", header = TRUE, sep = "\t")
+
+# ===== EDGER ANALYSIS FOR HT-29 CELLS =====
+
+# Subsetting data for HT cells only
+ht_samples <- metadata$sample[metadata$cell_line == "HT"]
+ht_counts <- counts[, ht_samples]
+ht_metadata <- metadata[ht_samples, ]
+
+# Creating DGEList object for HT cells
+y_ht <- DGEList(counts = ht_counts, samples = ht_metadata)
+y_ht$samples$group <- y_ht$samples$treatment
+
+# Creating design matrix
+design_ht <- model.matrix(~0 + treatment, data = ht_metadata)
+colnames(design_ht) <- c("CTRL", "FNN")
+
+# Removing low count genes
+keep_ht <- filterByExpr(y_ht, group = y_ht$samples$treatment)
+y_ht <- y_ht[keep_ht, , keep.lib.sizes = FALSE]
+
+# Calculating normalisation factors (TMM)
+y_ht <- normLibSizes(y_ht, method = "TMM")
+
+# Estimating dispersions and fit genewise models
+fit_ht <- glmQLFit(y_ht, design_ht, legacy = FALSE)
+
+# Defining experimental contrast
+contrast_ht <- makeContrasts(
+  FNN_vs_CTRL = FNN - CTRL,
+  levels = design_ht
+)
+
+# Test for differential expression
+test_ht <- glmQLFTest(fit_ht, contrast = contrast_ht)
+results_ht <- topTags(test_ht, n = Inf)$table
+
+# Add significance column
+results_ht$Significance <- ifelse(results_ht$PValue < 0.05 & abs(results_ht$logFC) > log2(1.5), 
+                                  "Significant", "Not Significant")
+
+# Annotate with gene names
+results_ht$ensembl_gene_id <- row.names(results_ht)
+results_ht <- merge(results_ht, tx2gene, by.x = "ensembl_gene_id", by.y = "gene_id", all.x = TRUE)
+sig_results_ht <- results_ht[results_ht$Significance == "Significant", ]
+
+print("HT-29 Significant genes:")
+print(sig_results_ht)
+
+unique_HT_genes_edgeR <- unique(sig_results_ht$gene_name)
+print(unique_HT_genes_edgeR)
+print(paste("Total:", length(unique_HT_genes_edgeR)))
+
+# ===== EDGER ANALYSIS FOR MDST8 CELLS =====
+
+# Subset data for MD cells only
+md_samples <- metadata$sample[metadata$cell_line == "MD"]
+md_counts <- counts[, md_samples]
+md_metadata <- metadata[md_samples, ]
+
+# Create DGEList object for MD cells
+y_md <- DGEList(counts = md_counts, samples = md_metadata)
+y_md$samples$group <- y_md$samples$treatment
+
+# Create design matrix
+design_md <- model.matrix(~0 + treatment, data = md_metadata)
+colnames(design_md) <- c("CTRL", "FNN")
+
+# Filter low count genes
+keep_md <- filterByExpr(y_md, group = y_md$samples$treatment)
+y_md <- y_md[keep_md, , keep.lib.sizes = FALSE]
+
+# Calculate normalization factors
+y_md <- normLibSizes(y_md, method = "TMM")
+
+# Estimate dispersions and fit genewise models 
+fit_md <- glmQLFit(y_md, design_md, legacy = FALSE)
+
+# Define experimental contrast
+cm_md <- makeContrasts(
+  FNN_vs_CTRL = FNN - CTRL,
+  levels = design_md
+)
+
+# Test for differential expression
+test_md <- glmQLFTest(fit_md, contrast = cm_md[, "FNN_vs_CTRL"])
+results_md <- topTags(test_md, n = Inf)$table
+
+# Add significance column
+results_md$Significance <- ifelse(results_md$PValue < 0.05 & abs(results_md$logFC) > log2(1.5), 
+                                  "Significant", "Not Significant")
+
+# Annotate with gene names
+results_md$ensembl_gene_id <- row.names(results_md)
+results_md <- merge(results_md, tx2gene, by.x = "ensembl_gene_id", by.y = "gene_id", all.x = TRUE)
+sig_results_md <- results_md[results_md$Significance == "Significant", ]
+
+print("MDST8 Significant genes:")
+print(sig_results_md)
+
+unique_MD_genes_edgeR <- unique(sig_results_md$gene_name)
+print(unique_MD_genes_edgeR)
+print(paste("Total:", length(unique_MD_genes_edgeR)))
