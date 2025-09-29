@@ -1,0 +1,179 @@
+#===============================================
+# RNA-seq Differential Expression Analysis
+# F. nucleatum effects on colorectal cancer cell lines
+# Author: Áine Finnegan
+# Analysis: DESeq2 comparison of HT-29 and MDST8 cells
+#===============================================
+
+#loading data
+load("deseq2.dds.RData")
+
+# extracting raw counts from object
+counts <- assay(dds, "counts")
+colnames(counts) <- gsub("_S[0-9]+$", "", colnames(counts))
+
+#remove 0 median genes (with zero median expression)
+df <- data.frame(counts)
+df$row_median <- rowMedians(counts)
+df_median_no_zero <- df[df$row_median != 0, ]
+df_median_no_zero$row_median <- NULL
+counts <- as.matrix(df_median_no_zero)
+
+# extracting metadata dataframe from the deseq object
+metadata <- colData(dds)
+metadata$sample <- gsub("_S[0-9]+$", "", metadata$sample)
+
+# setting up metadata properly
+#setting sample names as rownames
+rownames(metadata) <- metadata$sample
+#reordering columns of count matrix to make sure they are in same order as metadata rows
+counts <- counts[, rownames(metadata)]
+
+# renaming columns for clarity in analysis
+metadata$cell_line <- metadata$Group1
+metadata$treatment <- metadata$Group2
+metadata$replicate <- metadata$Group3
+
+# setting factor levels with appropriate references for cell lines and conditions
+metadata$cell_line <- factor(metadata$cell_line, levels = c("HT", "MD")) #HT is the reference level (+ converting to factor)
+metadata$treatment <- factor(metadata$treatment, levels = c("CTRL", "FNN")) #control is the reference level (+ converting to factor)
+metadata$replicate <- factor(metadata$replicate) #converting replicate to factor
+
+metadata
+#checking data has been set up appropriately for DESEQ2 analysis
+#appropriate changes have been made, data is ready for analysis
+
+#(i)===FNN vs CTRL in HT29 cell line DESEQ2 (CMS1 model)===
+
+# subsetting data for HT-29 cells only
+ht_samples <- metadata$sample[metadata$cell_line == "HT"] #filtering out MDST8 data
+ht_counts <- counts[, ht_samples] #only HT-29 data from count matrix
+ht_metadata <- metadata[ht_samples, ] #only HT-29 data from metadata
+
+# creating DESeq2 object for HT-29 cells using filtered data
+dds_ht <- DESeqDataSetFromMatrix(
+  countData = ht_counts,
+  colData = ht_metadata,
+  design = ~ treatment
+) #comparing treatments
+
+# filtering low count genes (less than 5 reads)
+keep_ht <- rowSums(counts(dds_ht)) >= 5
+dds_ht <- dds_ht[keep_ht,]
+
+#running DESeq2 analysis
+dds_ht <- DESeq(dds_ht)
+
+# Results for FNN vs CTRL in HT cells
+res_ht <- results(dds_ht, 
+                  contrast = c("treatment", "FNN", "CTRL"),
+                  alpha = 0.05)
+
+# Summary of HT results
+cat(" HT CELLS: FNN vs CTRL")
+summary(res_ht)
+#18 responsive genes (limited response)
+
+#Annotated genes using annotation file (tx2gene.tsv)to convert gene IDs to gene symbols for interpretation
+
+#reading in annotation
+tx2gene <- read.table("tx2gene.tsv", header = TRUE, sep = "\t")
+
+#converting results into dataframe
+res_ht_df <- as.data.frame(res_ht)
+#removing rows with missing p-values
+res_ht_df <- res_ht_df[!is.na(res_ht_df$padj), ]
+#moving ids from row names into regular column
+res_ht_df$ensembl_gene_id <- rownames(res_ht_df)
+
+# merging results with gene annotations
+res_ht_annotated <- merge(res_ht_df, tx2gene, 
+                          by.x = "ensembl_gene_id", 
+                          by.y = "gene_id", 
+                          all.x = TRUE)
+
+# adding significance column for clarity
+#significance set at 0.05
+res_ht_annotated$Significance <- ifelse(res_ht_annotated$padj < 0.05 & abs(res_ht_annotated$log2FoldChange) > 1, 
+                                        "Significant", "Not Significant")
+
+#filtering for significant genes only
+sig_ht_deseq2 <- res_ht_annotated[res_ht_annotated$Significance == "Significant", ]
+
+print("Significant genes (DESeq2 with annotations):")
+print(sig_ht_deseq2)
+
+#removing duplicate instances of significant genes for clear representation
+unique_HT_genes <- unique(sig_ht_deseq2$gene_name)
+print(unique_HT_genes)
+print(paste("Total:", length(unique_HT_genes)))
+
+
+
+#####
+
+#(ii)===FNN vs CTRL in MDST8 cell line DESEQ2 (CMS4 model)===
+
+# Subset data for MD cells only
+md_samples <- metadata$sample[metadata$cell_line == "MD"]
+md_counts <- counts[, md_samples] #only mdst8 data from count matrix
+md_metadata <- metadata[md_samples, ] #only mdst8 data from metadata
+
+# Create DESeq2 object for MD cells
+dds_md <- DESeqDataSetFromMatrix(
+  countData = md_counts,
+  colData = md_metadata,
+  design = ~ treatment
+) #comparing treatments
+
+# Filtering low count genes (less than 5 reads)
+keep_md <- rowSums(counts(dds_md)) >= 5
+dds_md <- dds_md[keep_md,]
+
+# Running DESeq2 analysis
+dds_md <- DESeq(dds_md)
+
+#Results for FNN vs CTRL in MD cells
+res_md <- results(dds_md, 
+                  contrast = c("treatment", "FNN", "CTRL"),
+                  alpha = 0.05)
+
+# Summary of MD results
+cat(" MD CELLS: FNN vs CTRL")
+summary(res_md)
+#4 responsive genes (limited response)
+
+#FNN does not appear to have significant impact on gene expression
+
+#Annotated genes using annotation file
+
+#converting results to standard dataframe
+res_md_df <- as.data.frame(res_md)
+#removing rows with missing p-values
+res_md_df <- res_md_df[!is.na(res_md_df$padj), ]
+res_md_df$ensembl_gene_id <- rownames(res_md_df)
+
+# Merge with gene annotations
+res_md_annotated <- merge(res_md_df, tx2gene, 
+                          by.x = "ensembl_gene_id", 
+                          by.y = "gene_id", 
+                          all.x = TRUE)
+
+# Add significance column
+res_md_annotated$Significance <- ifelse(res_md_annotated$padj < 0.05 & abs(res_md_annotated$log2FoldChange) > 1, 
+                                        "Significant", "Not Significant")
+
+# Get significant genes only
+sig_md_deseq2 <- res_md_annotated[res_md_annotated$Significance == "Significant", ]
+
+print("Significant genes (DESeq2 with annotations):")
+print(sig_md_deseq2)
+
+# Export results
+write.csv(sig_ht_deseq2, "HT29_significant_genes.csv", row.names = FALSE)
+write.csv(sig_md_deseq2, "MDST8_significant_genes.csv", row.names = FALSE)
+
+#removing duplicate instance of replicate genes for clear representation
+unique_md_genes <- unique(sig_md_deseq2$gene_name)
+print(unique_md_genes)
+print(paste("Total:", length(unique_md_genes)))
