@@ -8,7 +8,7 @@ RNA-seq differential expression analysis investigating F. nucleatum-induced gene
 ## Overview
 - **Cell lines**: HT-29 (CMS1), MDST8 (CMS4)  
 - **Treatment**: F. nucleatum infection vs control
-- **Method**: DESeq2 and EdgeR differential expression analysis for validation of approaches
+- **Method**: DESeq2 and EdgeR differential expression analysis for validation of methology
 
 ## Key Findings
 - **HT-29**: 18 significantly differentially expressed genes
