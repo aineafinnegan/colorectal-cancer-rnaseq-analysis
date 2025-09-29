@@ -1,5 +1,5 @@
 # colorectal-cancer-rnaseq-analysis
-DESeq2 analysis of F. nucleatum-induced transcriptomic changes in colorectal cancer cell lines (HT-29, MDST8)
+Differential expression analysis of F. nucleatum-induced transcriptomic changes in colorectal cancer cell lines (HT-29, MDST8)
 
 # Colorectal Cancer Microbiome-Host Transcriptomics
 
@@ -8,7 +8,7 @@ RNA-seq differential expression analysis investigating F. nucleatum-induced gene
 ## Overview
 - **Cell lines**: HT-29 (CMS1), MDST8 (CMS4)  
 - **Treatment**: F. nucleatum infection vs control
-- **Method**: DESeq2 differential expression analysis
+- **Method**: DESeq2 and EdgeR differential expression analysis for validation of approaches
 
 ## Key Findings
 - **HT-29**: 18 significantly differentially expressed genes
